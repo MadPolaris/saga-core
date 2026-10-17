@@ -346,8 +346,8 @@ class SagaDslAcceptanceSpec extends ScalaTestWithActorTestKit(
           pending.add(p)
           p.future
         }
-        override def doCommit(transactionId: String, context: Any, traceId: String) = scala.concurrent.scala.concurrent.Future.successful(Right(SagaResult("committed")))
-        override def doCompensate(transactionId: String, context: Any, traceId: String) = scala.concurrent.scala.concurrent.Future.successful(Right(SagaResult("compensated")))
+        override def doCommit(transactionId: String, context: Any, traceId: String) = scala.concurrent.Future.successful(Right(SagaResult("committed")))
+        override def doCompensate(transactionId: String, context: Any, traceId: String) = scala.concurrent.Future.successful(Right(SagaResult("compensated")))
         override protected def customClassification: PartialFunction[Throwable, net.imadz.infra.saga.SagaParticipant.RetryableOrNotException] = PartialFunction.empty
       }
       val definition = registerDefinition("ac14-def", steps = Seq(
@@ -421,6 +421,7 @@ class SagaDslAcceptanceSpec extends ScalaTestWithActorTestKit(
     }
 
     "build steps fluently via SagaStep.builder (.ref -> .command -> .mapReply) and auto-detect boundPhases" in {
+      val neverReply = spawn(Behaviors.receiveMessage[String] { case _ => Behaviors.same })
       val fullStep = SagaStep.builder[String, Any]("fluent-full")
         .inGroup(1)
         .withResilience(ResiliencePolicy(maxRetries = 4))
