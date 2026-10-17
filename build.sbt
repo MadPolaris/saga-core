@@ -13,12 +13,15 @@ val ScalikeJdbcVersion = "3.5.0"
 val MongoPluginVersion = "3.0.8"
 
 resolvers ++= Seq(
-  "Aliyun" at "https://maven.aliyun.com/repository/public/",
-  "Huawei" at "https://repo.huaweicloud.com/repository/maven/"
+  "Aliyun" at "https://maven.aliyun.com/repository/public/"
 )
 
 Compile / scalacOptions ++= Seq("-target:11", "-deprecation", "-feature", "-unchecked", "-Xlint")
 Compile / javacOptions ++= Seq("--release", "11")
+
+// Akka Cluster/Sharding acceptance suites spin up full actor systems with JVM-global
+// state (SagaRegistry, cluster singletons) and are not safe for concurrent execution.
+Test / parallelExecution := false
 
 dependencyOverrides ++= Seq(
   "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion,

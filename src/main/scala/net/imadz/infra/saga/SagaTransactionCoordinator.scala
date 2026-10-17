@@ -52,6 +52,8 @@ object SagaTransactionCoordinator {
   case class GetTransactionStatus(transactionId: String, replyTo: ActorRef[Option[StatusSnapshot]]) extends Command
 
   case object TransactionTimeout extends Command
+  /** Internal: stop the entity after the terminal grace period (see scheduleStopAfterGracePeriod). */
+  private case object StopAfterGracePeriod extends Command
   case class ProceedNext(completionReply: Option[ActorRef[TransactionResult]]) extends Command
   case class ResolveSuspended(completionReply: Option[ActorRef[TransactionResult]]) extends Command
   case class ManualFixStep(stepId: String, phase: TransactionPhase, completionReply: Option[ActorRef[TransactionResult]] = None) extends Command
@@ -327,6 +329,9 @@ object SagaTransactionCoordinator {
             cache.put(steps)
             Effect.none.thenRun(_ => executePhase(context, state, stepExecutorBehavior, cache, completionReply = None))
         }
+
+      case StopAfterGracePeriod =>
+        Effect.stop()
 
       case TransactionTimeout =>
         // A paused transaction (singleStep debug session / operator hold) is driven by the
@@ -733,7 +738,7 @@ object SagaTransactionCoordinator {
                 context.system.eventStream ! akka.actor.typed.eventstream.EventStream.Publish(SagaProgressEvent.TransactionCompleted(state.transactionId.get, stateNew.traceId))
                 completionReply.foreach(_ ! TransactionResult(successful = true, coarseSnapshot(stateNew)))
               })
-               .thenStop()
+               .thenRun(_ => scheduleStopAfterGracePeriod(context))
         }
 
       case CompensatePhase =>
@@ -753,7 +758,7 @@ object SagaTransactionCoordinator {
                 context.system.eventStream ! akka.actor.typed.eventstream.EventStream.Publish(SagaProgressEvent.TransactionFailed(state.transactionId.get, "transaction failed but compensated", stateNew.traceId))
                 completionReply.foreach(_ ! TransactionResult(successful = false, coarseSnapshot(stateNew), "transaction failed but compensated"))
               })
-               .thenStop()
+               .thenRun(_ => scheduleStopAfterGracePeriod(context))
         }
     }
   }
@@ -781,7 +786,7 @@ object SagaTransactionCoordinator {
               context.system.eventStream ! akka.actor.typed.eventstream.EventStream.Publish(SagaProgressEvent.TransactionSuspended(state.transactionId.get, reason, stateNew.traceId))
               completionReply.foreach(_ ! TransactionResult(successful = false, coarseSnapshot(stateNew), reason))
             }
-            .thenStop()
+            .thenRun(_ => scheduleStopAfterGracePeriod(context))
         case Success(_) =>
           val persistEffect = Effect.persist[Event, State](PhaseFailed(phase, outcomes))
           if (state.singleStep) {
@@ -802,8 +807,19 @@ object SagaTransactionCoordinator {
           context.system.eventStream ! akka.actor.typed.eventstream.EventStream.Publish(SagaProgressEvent.TransactionSuspended(state.transactionId.get, reason, stateNew.traceId))
           completionReply.foreach(_ ! TransactionResult(successful = false, coarseSnapshot(stateNew), reason))
         }
-        .thenStop()
+        .thenRun(_ => scheduleStopAfterGracePeriod(context))
     }
+  }
+
+  /** Grace period before a terminal/suspended entity stops itself. Immediate thenStop() after
+    * replying to the client races with the client's follow-up message: sharding can lose a message
+    * sent while the entity is stopping. The grace period keeps the entity alive for in-flight
+    * follow-ups (idempotent re-run, statusOf, admin ops) while still reclaiming resources. */
+  private val terminalGracePeriod: FiniteDuration = 10.seconds
+
+  private def scheduleStopAfterGracePeriod(context: ActorContext[Command]): Unit = {
+    context.scheduleOnce(terminalGracePeriod, context.self, StopAfterGracePeriod)
+    ()
   }
 
   private def suspendEffect(
@@ -818,7 +834,7 @@ object SagaTransactionCoordinator {
         context.system.eventStream ! akka.actor.typed.eventstream.EventStream.Publish(SagaProgressEvent.TransactionSuspended(state.transactionId.get, reason, stateNew.traceId))
         completionReply.foreach(_ ! TransactionResult(successful = false, coarseSnapshot(stateNew), reason))
       }
-      .thenStop()
+      .thenRun(_ => scheduleStopAfterGracePeriod(context))
 
   private def executorName(transactionId: String, step: SagaTransactionStep[_, _, _]): String =
     s"$transactionId-${step.stepId}-${step.phase}"

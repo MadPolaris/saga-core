@@ -3,6 +3,7 @@ package net.imadz.infra.saga.dsl
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, ActorSystem, Scheduler}
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.pattern.AskTimeoutException
 import akka.cluster.sharding.typed.scaladsl.EntityRef
 import akka.util.Timeout
 import net.imadz.infra.saga.SagaPhase.TransactionPhase
@@ -107,21 +108,30 @@ final class SagaRunner[E, A](
     registry.scheduleBackstop(transactionId, promise, completionBackstop, system)
 
     implicit val timeout: Timeout = Timeout(startAckTimeout)
-    val startAck = coordinatorRef(transactionId).ask { (replyTo: ActorRef[SagaStartReply]) =>
-      StartSaga(transactionId, definition.name, definition.version, argsBytes, traceId, singleStep, Some(replyTo), Some(completionRef))
-    }
+    def sendStartSaga(isRetry: Boolean): Unit = {
+      val startAck = coordinatorRef(transactionId).ask { (replyTo: ActorRef[SagaStartReply]) =>
+        StartSaga(transactionId, definition.name, definition.version, argsBytes, traceId, singleStep, Some(replyTo), Some(completionRef))
+      }
 
-    startAck.onComplete {
-      case Success(Started) => () // terminal result arrives via completionRef
-      case Success(AlreadyRunning(snapshot)) =>
-        registry.succeed(transactionId, promise, TransactionResult(successful = false, snapshot, snapshot.failReason.getOrElse("already running")))
-      case Success(AlreadyFinished(successful, failReason, steps)) =>
-        registry.succeed(transactionId, promise, TransactionResult(successful, snapshotFrom(transactionId, successful, failReason, steps), failReason.getOrElse("")))
-      case Success(rejection: StartRejection) =>
-        registry.fail(transactionId, promise, new SagaStartRejectedException(rejection, s"Saga start rejected: $rejection"))
-      case Failure(t) =>
-        registry.fail(transactionId, promise, t)
+      startAck.onComplete {
+        case Success(Started) => () // terminal result arrives via completionRef
+        case Success(AlreadyRunning(snapshot)) =>
+          registry.succeed(transactionId, promise, TransactionResult(successful = false, snapshot, snapshot.failReason.getOrElse("already running")))
+        case Success(AlreadyFinished(successful, failReason, steps)) =>
+          registry.succeed(transactionId, promise, TransactionResult(successful, snapshotFrom(transactionId, successful, failReason, steps), failReason.getOrElse("")))
+        case Success(rejection: StartRejection) =>
+          registry.fail(transactionId, promise, new SagaStartRejectedException(rejection, s"Saga start rejected: $rejection"))
+        case Failure(_: AskTimeoutException) if !isRetry =>
+          // The coordinator stops itself after reaching a terminal state; a StartSaga sent
+          // while the sharded entity is stopping/restarting can be lost. StartSaga is
+          // idempotent for the same (definition, args) key, so one retry is safe.
+          system.log.info("StartSaga ask for {} timed out (coordinator likely restarting); retrying once", transactionId)
+          sendStartSaga(isRetry = true)
+        case Failure(t) =>
+          registry.fail(transactionId, promise, t)
+      }
     }
+    sendStartSaga(isRetry = false)
     promise.future
   }
 
