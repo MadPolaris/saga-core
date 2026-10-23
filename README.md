@@ -3,6 +3,37 @@
 
 # Saga Core
 
+## 文件真源与新增严格契约
+
+[`truth/`](truth/) 保存本次新增的协调器领域知识，明确区分现有 legacy 行为和待验证的 strict 决策/结果核对契约；它不是银行或 Fab 的应用业务定义库。可使用工作区的 `metarch-truthsrc` 公共 CLI 对此树运行 `validate` 与 `roundtrip`。
+
+转账和 Fab 拆合批的闭合文件示例位于 `metarch-truthsrc/example/saga-money-transfer` 与 `example/fab-split-merge`，目前仅为 **contract-only**：schema 校验通过不证明参与者 receipt、生成应用或跨 JVM 恢复已实现。Monarch 阶段引用独立 Saga，事务成功才允许成功 checkpoint；结果未知不得自动补偿或换事务号。Release/Cancel 撤销预留不等于反转已提交效果。
+
+### 独立 strict API／持久化 schema v2（未选择发布版本）
+
+`net.imadz.infra.saga.strict.StrictSagaCoordinator` 是 additive、本地 typed API，不替换下方 legacy 0.2 API／`saga_v3` wire。必须使用独立 persistence namespace；strict schema v2 使用 serializer `77102231` 与 `event-v2`／`state-v2`，缺 pin 的 strict v1 事件／快照或旧 manifest 一律 fail closed，不能从名称、注册表或当前部署补造声明，也不提供 generic／Java／业务类序列化 fallback。v2 是外层持久化 schema，**不是** definition 或业务 codec 的版本。
+
+- 定义显式提供 `StrictSagaDefinition(name, version: Int, definitionDigest, argsCodec, participants)`；`definitionDigest` 必须为规范小写 `sha256:` + 64 hex。每个 `PayloadCodec` 显式声明 `CodecPin(id, version: Int)`（稳定非空 id、正整数版本），业务 schema 版本不从 name／id 猜测。args bytes 使用该 codec 的 canonical encoding。
+- durable `TransactionIdentity` 固定 txId、definition name/version、args digest、definition semantics digest、args codec pin、ordered plan digest。plan digest 对实际有序 step／participant／resource／phase descriptors 及 **每个 Prepare／Commit／Compensate receipt codec id/version** 做 domain-separated、length-prefixed SHA-256；整个 transaction identity 纳入每个 operation identity。绑定记录的是实际 codec 的 pin，而不是另填一份可脱离 codec 的描述。
+- 同 txId／args／全部 pin 重复 `Start`／`Attach` 返回原持久状态，不重驱业务；任一 semantics／args codec／任一 phase receipt codec／计划漂移，即使事务已 Succeeded／Aborted，也在 `Start`／`Attach`／`Abort`／`Reconcile` 的终态短路前拒绝，不执行 port I/O 或新增 journal。`GetStatus` **只读历史**，不表示当前 definition 可以恢复执行。recovery 回放不解码、不 materialize、不查询／执行 port；恢复后只有显式同 pin、鉴权通过且有正数上限的 `Reconcile` 能继续同一事务／operation identity。
+- `participants` 与 codec 必须纯、确定、非阻塞，pin／实现应在 incarnation 内稳定。首个显式 admission 重新核验当前纯计划；观察性 Start／Attach 复用已核验 bindings、检查实时 codec pins，不重复 materialize。每次真实 interaction 则从持久 args bytes 重新解码／核验，避免共享被前一 port 修改的业务对象。调用前和 receipt completion／encode／decode 后发现 codec 漂移时，不接受 confirmation；已有调用的结果记为 unknown，停止并要求原 pin 下授权核对。声明同 pin 却偷偷改变代码语义不在此检测保证内。
+- **digest、codec pin、DeclaredReadOnly、安全 absence／fencing 与 receipt 都是宿主／参与者声明，不是运行时对任意代码或数据库副作用的自动认证。** 参与者仍须按 durable operation identity 查询真实 durable receipt、去重／fencing；codec round-trip 只验证编码契约，不认证业务效果。unknown／timeout／rejection 不是 absence；不能伪造 receipt、换 txId 规避未知结果，或反转已作出的 commit decision。
+
+工程门只验证协调器／Protobuf／persistence testkit 的边界（含 Java serialization off），不证明真实银行／Fab 业务 receipt、跨 JVM／远端数据库恢复或端到端业务已贯通。可用 JDK 11 执行 `sbt "testOnly net.imadz.infra.saga.strict.StrictSagaSpec"`；不据此发布候选或宣称兼容性／业务认证。
+
+### strict receipt inputs（serial-plan 工程 API）
+
+`OperationRequest(identity, args)` 与既有 `PhasePort.execute/query` 签名保持源码调用兼容，原两字段 extractor 保留；新增 `receiptContext` 默认不可用、fail closed。运行时在 `IntentPersisted.thenRun` 内绑定完整 consumer identity，传入只读 `StrictReceiptContext`，与 args 分离。port 使用 `request.receipt(producerOperationIdentity, expectedCodecPin, payloadCodec)` 得到 `Try[R]`；直接使用 context 时也必须传完整 consumer identity。没有公开 state／JSON／bytes 工厂或不受限 evidence dump，复制 request 改 identity 不能转移读取权限。
+
+- **当前唯一执行模型是 serial-plan，不是 truth 中同组并发。** Prepare 只能读有序计划中先前步骤的 Prepare；Commit 必须已有 durable CommitDecision，可读全部 Prepare 与先前 Commit，不能读自己／未来 Commit；Compensate 必须有 AbortRequested（abort decision）且无 commit decision／confirmed Commit evidence，只能读自己的 Prepare，逆序补偿不授予跨参与者读取权限。abort 中既有未知 Prepare 的只读 query 仍合法，不允许新 Prepare execute。
+- 每个 lookup 校验完整 transaction／participant／resource／step／phase、durable descriptor receipt pin 与调用者 expected pin，再检查实际 `codec.pin` 的 decode 前后值。只有 key 与完整 identity 一致的 `Evidence.Confirmed` 可读；missing／Unknown／Absent／Refused、错 identity／resource／pin、future／Compensate evidence 一律拒绝。
+- context 仅保留 immutable confirmed ByteString、identity 与 pin，不保留 actor／StrictState／decoded A/R 或 codec。每次 lookup 从 durable bytes 新解码，拒绝 null／malformed／pin 漂移；不缓存可变 R，也不额外要求 receipt canonical re-encode。codec 仍必须履行其新解码契约；同 pin 的恶意 codec 或业务 port 效果不由此认证。
+- context 是非持久运行时输入，没有新 durable 字段，不改 strict model／proto／converter／serializer。replay 不建 context／不调用 port，授权 Reconcile 后从恢复的 durable evidence 新建；Intent-before-I/O、CommitDecision-before-Commit、incarnation／ordinal／budget／unknown query 规则不变。
+
+工程回归使用 `sbt "testOnly net.imadz.infra.saga.strict.StrictSagaSpec net.imadz.infra.saga.strict.StrictReceiptContextSpec"`，包括双 participant typed ports 的 receipt 数据流、execute/query 与故障恢复；它不是公共应用接线、真实账户效果／数据库耐久 receipt、跨 JVM、发布或二进制兼容认证。公共 runtime boundary 在本子批 **NOT RUN**，Node lowering／AST／生成器及生成应用留后续。
+
+下方是 legacy v3 DSL 速查，其历史“工业级”“强一致性”“回滚”表述不能作为新增安全契约的验收结论。
+
 `saga-core` 是一个基于 Akka Typed 和 Event Sourcing 构建的工业级分布式事务协调引擎。它实现了 TCC（Try-Confirm-Cancel）模式，支持高并发、强一致性、以及复杂的混合编排（串行+并行）逻辑。
 
 ## 核心特性

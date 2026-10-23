@@ -1,0 +1,19 @@
+# ═══ truthsrc atom — hand-editable; contract: SCHEMA.md ═══
+
+kind: note
+type: question
+name: "What evidence permits manual recovery?"
+origin:
+  stage: eventStorming
+  board: saga-design-20261022
+  seq: 3
+payload:
+  {
+    "type": "question",
+    "name": "What evidence permits manual recovery?",
+    "stage": "eventStorming",
+    "description": "Desired strict: record authenticated principal and reconciliation evidence; an operator action must not simply mark an unknown effect successful. Query/status/attach must not dispatch business effects. Replay remains inert until explicit bounded authorization.",
+    "links": [],
+    "author": "Saga design task approved 2026-10-22",
+    "createdAt": "2026-10-22"
+  }

@@ -1,0 +1,12 @@
+# ═══ truthsrc workshop root — hand-editable; contract: SCHEMA.md ═══
+
+schemaVersion: truthsrc/v1
+name: saga-engine
+sessionOrder:
+  - eventStorming
+  - commandStorming
+  - aggregateDiscovery
+  - subdomainExploration
+  - contextMapping
+  - refining
+  - storyMapping

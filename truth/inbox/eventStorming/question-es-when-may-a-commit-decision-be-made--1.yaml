@@ -1,0 +1,19 @@
+# ═══ truthsrc atom — hand-editable; contract: SCHEMA.md ═══
+
+kind: note
+type: question
+name: "When may a commit decision be made?"
+origin:
+  stage: eventStorming
+  board: saga-design-20261022
+  seq: 1
+payload:
+  {
+    "type": "question",
+    "name": "When may a commit decision be made?",
+    "stage": "eventStorming",
+    "description": "Desired strict: only after all Prepare receipts are confirmed, durably record CommitDecision before issuing Commit. Afterwards reconcile forward; Release/Cancel only undo reservations before that decision. The current legacy coordinator may compensate after a Commit failure, so this is a design requirement, not a verified legacy guarantee.",
+    "links": [],
+    "author": "Saga design task approved 2026-10-22",
+    "createdAt": "2026-10-22"
+  }

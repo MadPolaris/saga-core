@@ -1,0 +1,19 @@
+# ═══ truthsrc atom — hand-editable; contract: SCHEMA.md ═══
+
+kind: note
+type: question
+name: "How does a stage invoke a transaction?"
+origin:
+  stage: eventStorming
+  board: saga-design-20261022
+  seq: 4
+payload:
+  {
+    "type": "question",
+    "name": "How does a stage invoke a transaction?",
+    "stage": "eventStorming",
+    "description": "Desired composition: Monarch persists invocation identity and args before calling the independent Saga. Saga durable success allows a clean checkpoint; rejected/compensated require explicit outer policy; unknown pauses without another Saga or OCAP. Split, child execution and merge use separate durable operation identities.",
+    "links": [],
+    "author": "Saga design task approved 2026-10-22",
+    "createdAt": "2026-10-22"
+  }

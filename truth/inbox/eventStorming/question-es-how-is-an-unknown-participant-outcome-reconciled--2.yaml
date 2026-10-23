@@ -1,0 +1,19 @@
+# ═══ truthsrc atom — hand-editable; contract: SCHEMA.md ═══
+
+kind: note
+type: question
+name: "How is an unknown participant outcome reconciled?"
+origin:
+  stage: eventStorming
+  board: saga-design-20261022
+  seq: 2
+payload:
+  {
+    "type": "question",
+    "name": "How is an unknown participant outcome reconciled?",
+    "stage": "eventStorming",
+    "description": "Observed legacy: executor retries and recovered-ongoing policies do not establish external effect exactly-once. Desired strict: stop on unknown, query a durable receipt under the exact transaction/args/participant/resource/step/phase identity; authoritative absence also requires participant-side fencing before retry. An idle device or empty read model is not absence proof.",
+    "links": [],
+    "author": "Saga design task approved 2026-10-22",
+    "createdAt": "2026-10-22"
+  }

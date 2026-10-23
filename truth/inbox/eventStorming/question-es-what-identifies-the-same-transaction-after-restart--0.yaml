@@ -1,0 +1,19 @@
+# ═══ truthsrc atom — hand-editable; contract: SCHEMA.md ═══
+
+kind: note
+type: question
+name: "What identifies the same transaction after restart?"
+origin:
+  stage: eventStorming
+  board: saga-design-20261022
+  seq: 0
+payload:
+  {
+    "type": "question",
+    "name": "What identifies the same transaction after restart?",
+    "stage": "eventStorming",
+    "description": "Observed legacy: name/version plus args bytes/hash and transaction ID identify starts; the registry materializes participants. Desired strict: pin the semantic definition, canonical args and readable participant manifest, reject drift, and keep retry attempts outside the effect identity. Source: src/main/scala/net/imadz/infra/saga/dsl/SagaDefinition.scala and SagaTransactionCoordinator.scala.",
+    "links": [],
+    "author": "Saga design task approved 2026-10-22",
+    "createdAt": "2026-10-22"
+  }

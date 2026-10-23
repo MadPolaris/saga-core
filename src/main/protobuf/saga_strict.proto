@@ -1,0 +1,83 @@
+syntax = "proto3";
+package net.imadz.infra.saga.strict;
+option java_package = "net.imadz.infra.saga.strict.proto";
+
+// Strict schema v2 requires explicit semantics/args/ordered per-phase receipt pins.
+// Unpinned strict v1 envelopes fail closed; never infer pins or upgrade them on read.
+// Independent protocol: never reuse legacy saga_v3 field numbers/manifests/journals.
+enum StrictPhasePO { PHASE_UNSPECIFIED = 0; PREPARE = 1; COMMIT = 2; COMPENSATE = 3; }
+enum StrictStatusPO {
+  STATUS_UNSPECIFIED = 0; EMPTY = 1; PREPARING = 2; COMMITTING = 3;
+  ABORTING = 4; RECOVERY_REQUIRED = 5; SUCCEEDED = 6; ABORTED = 7;
+}
+message CodecPinPO { string id = 1; int32 version = 2; }
+message TransactionIdentityPO {
+  string transaction_id = 1;
+  string definition_name = 2;
+  int32 definition_version = 3;
+  string args_digest = 4;
+  string definition_digest = 5;
+  CodecPinPO args_codec = 6;
+  string plan_digest = 7;
+}
+message OperationIdentityPO {
+  TransactionIdentityPO transaction = 1;
+  string participant_id = 2;
+  string resource = 3;
+  string step_id = 4;
+  StrictPhasePO phase = 5;
+}
+message ReceiptCodecPinPO { StrictPhasePO phase = 1; CodecPinPO codec = 2; }
+message ParticipantPO {
+  string step_id = 1;
+  string participant_id = 2;
+  string resource = 3;
+  repeated StrictPhasePO phases = 4;
+  repeated ReceiptCodecPinPO receipt_codecs = 5;
+}
+message IntentPO { OperationIdentityPO identity = 1; int64 ordinal = 2; bool query = 3; }
+message AbsentPO { string proof = 1; bool safe_to_retry = 2; }
+message EvidencePO {
+  OperationIdentityPO identity = 1;
+  oneof outcome {
+    bytes confirmed_receipt = 2;
+    AbsentPO absent = 3;
+    string unknown = 4;
+    string rejected = 5;
+  }
+}
+message StartedPO {
+  TransactionIdentityPO identity = 1;
+  bytes args = 2;
+  repeated ParticipantPO participants = 3;
+}
+message EvidenceRecordedPO { int64 ordinal = 1; EvidencePO evidence = 2; }
+message ReconcileAuthorizedPO { string principal = 1; int32 max_interactions = 2; }
+message MarkerPO {}
+message StrictEventPO {
+  uint32 schema_version = 1;
+  oneof event {
+    StartedPO started = 2;
+    IntentPO intent = 3;
+    EvidenceRecordedPO evidence = 4;
+    MarkerPO commit_decision = 5;
+    string abort_requested = 6;
+    string recovery_required = 7;
+    ReconcileAuthorizedPO reconcile_authorized = 8;
+    MarkerPO succeeded = 9;
+    MarkerPO aborted = 10;
+  }
+}
+message StrictStatePO {
+  uint32 schema_version = 1;
+  TransactionIdentityPO identity = 2;
+  bytes args = 3;
+  repeated ParticipantPO participants = 4;
+  StrictStatusPO status = 5;
+  bool commit_decision = 6;
+  bool abort_requested = 7;
+  int64 last_ordinal = 8;
+  IntentPO pending = 9;
+  repeated EvidencePO evidence = 10;
+  string reason = 11;
+}
