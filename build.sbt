@@ -76,6 +76,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-cluster-sharding-typed" % akkaVersion,
   "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,
   "com.typesafe.akka" %% "akka-persistence-testkit" % akkaVersion % Test,
+  "com.typesafe.akka" %% "akka-serialization-jackson" % akkaVersion % Test,
   "org.scalatest" %% "scalatest" % "3.2.15" % Test,
   "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
   "com.google.protobuf" % "protobuf-java" % "3.15.6",

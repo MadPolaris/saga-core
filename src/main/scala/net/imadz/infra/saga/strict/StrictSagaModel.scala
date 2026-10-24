@@ -3,7 +3,8 @@ package net.imadz.infra.saga.strict
 import com.google.protobuf.ByteString
 
 /** Only these outer journal/snapshot types have strict Protobuf serializer bindings.
-  * Commands are local typed messages in this batch, not advertised as remoting APIs.
+  * Wire-crossing coordinator commands/replies (StrictSagaCoordinator.Command/Reply) are
+  * CborSerializable and ride jackson-cbor instead.
   */
 sealed trait StrictDurable
 final case class ReceiptCodecPin(phase: Phase, codec: CodecPin)

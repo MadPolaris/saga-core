@@ -5,6 +5,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.persistence.typed.{PersistenceId, RecoveryCompleted}
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
 import com.google.protobuf.ByteString
+import net.imadz.common.CborSerializable
 import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -12,17 +13,18 @@ import scala.util.{Failure, Success, Try}
 
 /** Independent ESB entry point. RecoveryCompleted is inert; Start/Attach/GetStatus never
   * re-drive an existing transaction. Only authorized bounded Reconcile resumes recovery.
-  * Commands/replies are local-only in this batch (no generic serialization fallback).
+  * Wire-crossing commands/replies are CborSerializable (jackson-cbor); Drive/Returned/Deadline
+  * stay private local-only (never serialized).
   */
 object StrictSagaCoordinator {
-  sealed trait Command
+  sealed trait Command extends CborSerializable
   final case class Start(transactionId: String, argsBytes: ByteString, replyTo: ActorRef[Reply]) extends Command
   final case class Attach(identity: TransactionIdentity, replyTo: ActorRef[Reply]) extends Command
   final case class GetStatus(replyTo: ActorRef[Reply]) extends Command
   final case class Abort(identity: TransactionIdentity, reason: String, replyTo: ActorRef[Reply]) extends Command
   final case class Reconcile(identity: TransactionIdentity, authorization: String, maxInteractions: Int,
                               replyTo: ActorRef[Reply]) extends Command
-  sealed trait Reply
+  sealed trait Reply extends CborSerializable
   final case class Status(state: StrictState) extends Reply
   final case class Denied(reason: String) extends Reply
   case object ConflictingIdentity extends Reply

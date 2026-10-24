@@ -265,9 +265,11 @@ class StrictSagaSpec extends ScalaTestWithActorTestKit(
       refused(validState ++ Array[Byte](0x78, 0x01), "state-v2") // Unknown v2 field.
       intercept[IllegalArgumentException] { serializer.toBinary("not-a-strict-envelope") }
       intercept[IllegalArgumentException] { serializer.manifest(ByteString.EMPTY) }
-      // Local messages and raw payloads have no strict binding and cannot use Java fallback.
+      // Raw payloads have no binding and cannot use the Java fallback. Coordinator
+      // commands/replies are CborSerializable and ride jackson-cbor — the full wire
+      // contract is regression-tested in StrictCoordinatorSerializationSpec.
       serialization.serialize(ByteString.EMPTY).isFailure shouldBe true
-      serialization.serialize(GetStatus(createTestProbe[Reply]().ref)).isFailure shouldBe true
+      serialization.serialize(GetStatus(createTestProbe[Reply]().ref)).isSuccess shouldBe true
 
       val args = ByteString.copyFromUtf8("args")
       val participant = descriptor("step", "participant", "resource")
